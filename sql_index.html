@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Data Analyst</title>
+<style>
+  :root {
+    --ink: #1c1b19;
+    --paper: #faf8f4;
+    --line: #ded8cc;
+    --accent: #3f5d5a;
+    --muted: #7a7468;
+    --bad: #9c3b3b;
+    --code-bg: #efece4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 40px 20px 80px;
+  }
+  header { max-width: 680px; width: 100%; margin-bottom: 24px; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 6px; }
+  header p { color: var(--muted); font-size: 0.92rem; margin: 0; line-height: 1.5; }
+  main { width: 100%; max-width: 680px; display: flex; flex-direction: column; gap: 20px; }
+  form { display: flex; gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+  input[type=text] {
+    flex: 1; font-size: 0.95rem; padding: 12px 14px;
+    border: 1px solid var(--line); border-radius: 3px; background: #fff; color: var(--ink);
+  }
+  input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    font-size: 0.92rem; padding: 0 20px; border: none; border-radius: 3px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .entry { display: flex; flex-direction: column; gap: 10px; }
+  .question { font-weight: 600; font-size: 0.95rem; }
+  .sql-box {
+    background: var(--code-bg); border-radius: 4px; padding: 10px 12px;
+    font-family: Consolas, Menlo, monospace; font-size: 0.82rem; white-space: pre-wrap;
+    color: #3a372f;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  th { background: #f0ede5; }
+  .blocked { color: var(--bad); font-size: 0.9rem; font-weight: 600; }
+  .loading, .empty { color: var(--muted); font-style: italic; font-size: 0.9rem; }
+  .error { color: var(--bad); font-size: 0.88rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Business Data Analyst</h1>
+  <p>Ask questions about customers, products, and orders in plain English. Every answer shows the exact SQL that was run — nothing destructive is ever executed.</p>
+</header>
+
+<main>
+  <form id="askForm">
+    <input id="questionInput" type="text" placeholder="e.g. What are the top 5 products by revenue?" autocomplete="off">
+    <button id="askButton" type="submit">Ask</button>
+  </form>
+  <div id="results"></div>
+</main>
+
+<script>
+  const API_URL = "http://127.0.0.1:8001/ask";
+  const form = document.getElementById("askForm");
+  const input = document.getElementById("questionInput");
+  const button = document.getElementById("askButton");
+  const results = document.getElementById("results");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const question = input.value.trim();
+    if (!question) return;
+
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML = `<div class="question">${escapeHtml(question)}</div>
+                        <div class="loading">Generating SQL and running it…</div>`;
+    results.prepend(entry);
+    input.value = "";
+    button.disabled = true;
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      render(entry, question, data);
+    } catch (err) {
+      entry.innerHTML += `<div class="error">Couldn't reach the assistant. Is the API running? (${escapeHtml(err.message)})</div>`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  function render(entry, question, data) {
+    let html = `<div class="question">${escapeHtml(question)}</div>`;
+    html += `<div class="sql-box">${escapeHtml(data.sql || "(no SQL generated)")}</div>`;
+
+    if (data.blocked) {
+      html += `<div class="blocked">Blocked before execution: ${escapeHtml(data.reason)}</div>`;
+    } else if (data.error) {
+      html += `<div class="error">Query error: ${escapeHtml(data.error)}</div>`;
+    } else if (!data.rows || data.rows.length === 0) {
+      html += `<div class="empty">(no rows returned)</div>`;
+    } else {
+      html += "<table><thead><tr>" +
+        data.columns.map(c => `<th>${escapeHtml(c)}</th>`).join("") +
+        "</tr></thead><tbody>" +
+        data.rows.map(r => "<tr>" + r.map(v => `<td>${escapeHtml(String(v))}</td>`).join("") + "</tr>").join("") +
+        "</tbody></table>";
+    }
+    entry.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+</script>
+
+</body>
+</html>
